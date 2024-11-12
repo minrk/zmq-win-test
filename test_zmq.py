@@ -43,7 +43,7 @@ async def receiver(url, waiter):
         s.connect(URL)
         tic = time.monotonic()
         while not s.EVENTS & zmq.POLLIN:
-            await waiter(s.FD)
+            await waiter(s.fileno())
         toc = time.monotonic()
         s.recv(zmq.NOBLOCK)
         return toc - tic

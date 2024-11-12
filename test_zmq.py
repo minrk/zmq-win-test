@@ -1,5 +1,6 @@
 import asyncio
 import time
+import socket
 from threading import Thread
 
 import zmq
@@ -64,3 +65,15 @@ def test_trio():
     wait_time = trio.run(receiver, URL, trio.lowlevel.wait_readable)
     sender_thread.join()
     assert 1 < wait_time < 3
+
+
+def test_socket_fromfd():
+    with zmq.Context() as ctx, ctx.socket(zmq.PULL) as s:
+        signal_socket = socket.fromfd(s.fileno(), socket.AF_INET, socket.SOCK_STREAM)
+        signal_socket.close()
+
+
+def test_socket_fileno():
+    with zmq.Context() as ctx, ctx.socket(zmq.PULL) as s:
+        signal_socket = socket.socket(fileno=s.fileno())
+        signal_socket.detach()

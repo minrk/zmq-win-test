@@ -1,0 +1,36 @@
+name: Test
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+
+    strategy:
+      fail-fast: false
+      timeout-minutes: 5
+      matrix:
+        os:
+          - ubuntu-latest
+          - windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.12
+          cache: pip
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install --upgrade -r requirements.txt .
+          pip freeze
+
+      - name: Run tests
+        run: |
+          pytest -v --color=yes

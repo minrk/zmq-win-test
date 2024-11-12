@@ -18,7 +18,10 @@ def spawn_sender_thread(url, delay=2):
         s.linger = 3_000
         s.bind(url)
         time.sleep(delay)
-        s.send(b"message", zmq.NOBLOCK)
+        try:
+            s.send(b"message", zmq.NOBLOCK)
+        except zmq.Again:
+            print("no receiver...")
 
 
 async def asyncio_wait_readable(fd, timeout=10):

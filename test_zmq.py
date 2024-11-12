@@ -1,4 +1,5 @@
 import asyncio
+import platform
 import time
 import socket
 from contextlib import contextmanager
@@ -26,13 +27,17 @@ def spawn_sender_thread(url, delay=2):
 
 async def asyncio_wait_readable(fd, timeout=10):
     loop = asyncio.get_event_loop()
-    selector = SelectorThread(loop)
-    f = asyncio.Future()
+    if platform.system() == "Windows":
+        selector = SelectorThread(loop)
+    else:
+        selector = loop
 
+    f = asyncio.Future()
     def callback(*args):
-        # done with selector
         selector.remove_reader(fd)
-        selector.close()
+        # done with selector
+        if platform.system() == "Windows":
+            selector.close()
         if not f.done():
             f.set_result(None)
 

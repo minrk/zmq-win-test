@@ -28,7 +28,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           pip install --upgrade pip
-          pip install --upgrade -r requirements.txt .
+          pip install --upgrade -r requirements.txt
           pip freeze
 
       - name: Run tests

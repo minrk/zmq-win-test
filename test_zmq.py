@@ -83,8 +83,10 @@ def test_async_wait(runner, get_handle):
         f = partial(receiver, URL, trio.lowlevel.wait_readable, get_handle)
     sender_thread = Thread(target=spawn_sender_thread, args=(URL,))
     sender_thread.start()
-    wait_time = run(f)
-    sender_thread.join()
+    try:
+        wait_time = run(f)
+    finally:
+        sender_thread.join()
     assert 1 < wait_time < 3
 
 

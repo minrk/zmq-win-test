@@ -1,9 +1,12 @@
 import asyncio
 import time
 import socket
+from contextlib import contextmanager
+from functools import partial
 from threading import Thread
 
 import zmq
+import pytest
 import trio
 from tornado.platform.asyncio import SelectorThread
 
@@ -33,36 +36,54 @@ async def asyncio_wait_readable(fd, timeout=10):
         if not f.done():
             f.cancel()
 
-    loop.call_later(10, cancel)
+    loop.call_later(5, cancel)
     selector.add_reader(fd, callback)
     return await f
 
+@contextmanager
+def get_fd(zmq_sock):
+    yield zmq_sock.fileno()
 
-async def receiver(url, waiter):
+@contextmanager
+def socket_fromfd(zmq_sock):
+    with socket.fromfd(zmq_sock.fileno(), socket.AF_INET, socket.SOCK_STREAM) as sock:
+        yield sock
+
+@contextmanager
+def socket_fileno(zmq_sock):
+    sock = socket.socket(fileno=zmq_sock.fileno())
+    try:
+        yield sock
+    finally:
+        sock.detach()
+
+
+async def receiver(url, waiter, get_handle):
     with zmq.Context() as ctx, ctx.socket(zmq.PULL) as s:
         s.linger = 0
         s.connect(URL)
         tic = time.monotonic()
-        while not s.EVENTS & zmq.POLLIN:
-            await waiter(s.fileno())
+        with get_handle(s) as handle:
+            while not s.EVENTS & zmq.POLLIN:
+                await waiter(handle)
         toc = time.monotonic()
         s.recv(zmq.NOBLOCK)
         return toc - tic
 
-
-def test_asyncio():
+@pytest.mark.parametrize("runner", [
+    "asyncio", "trio"])
+@pytest.mark.parametrize("get_handle", [
+    get_fd, socket_fromfd, socket_fileno])
+def test_async_wait(runner, get_handle):
+    if runner == "asyncio":
+        run = asyncio.run
+        f = receiver(URL, asyncio_wait_readable, get_handle)
+    elif runner == "trio":
+        run = trio.run
+        f = partial(receiver, URL, trio.lowlevel.wait_readable, get_handle)
     sender_thread = Thread(target=spawn_sender_thread, args=(URL,))
     sender_thread.start()
-    wait_time = asyncio.run(receiver(URL, asyncio_wait_readable))
-    sender_thread.join()
-    assert 1 < wait_time < 3
-
-
-def test_trio():
-    sender_thread = Thread(target=spawn_sender_thread, args=(URL,))
-    sender_thread.start()
-
-    wait_time = trio.run(receiver, URL, trio.lowlevel.wait_readable)
+    wait_time = run(f)
     sender_thread.join()
     assert 1 < wait_time < 3
 

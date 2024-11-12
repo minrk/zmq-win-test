@@ -18,7 +18,7 @@ def spawn_sender_thread(url, delay=2):
         s.linger = 3_000
         s.bind(url)
         time.sleep(delay)
-        s.send(b"message")
+        s.send(b"message", zmq.NOBLOCK)
 
 
 async def asyncio_wait_readable(fd, timeout=10):
@@ -30,24 +30,28 @@ async def asyncio_wait_readable(fd, timeout=10):
         # done with selector
         selector.remove_reader(fd)
         selector.close()
-        f.set_result(None)
+        if not f.done():
+            f.set_result(None)
 
     def cancel():
         if not f.done():
-            f.cancel()
+            f.set_exception(TimeoutError())
 
     loop.call_later(5, cancel)
     selector.add_reader(fd, callback)
     return await f
 
+
 @contextmanager
 def get_fd(zmq_sock):
     yield zmq_sock.fileno()
+
 
 @contextmanager
 def socket_fromfd(zmq_sock):
     with socket.fromfd(zmq_sock.fileno(), socket.AF_INET, socket.SOCK_STREAM) as sock:
         yield sock
+
 
 @contextmanager
 def socket_fileno(zmq_sock):
@@ -70,10 +74,21 @@ async def receiver(url, waiter, get_handle):
         s.recv(zmq.NOBLOCK)
         return toc - tic
 
-@pytest.mark.parametrize("runner", [
-    "asyncio", "trio"])
-@pytest.mark.parametrize("get_handle", [
-    get_fd, socket_fromfd, socket_fileno])
+
+def test_socket_fromfd():
+    with zmq.Context() as ctx, ctx.socket(zmq.PULL) as s:
+        signal_socket = socket.fromfd(s.fileno(), socket.AF_INET, socket.SOCK_STREAM)
+        signal_socket.close()
+
+
+def test_socket_fileno():
+    with zmq.Context() as ctx, ctx.socket(zmq.PULL) as s:
+        signal_socket = socket.socket(fileno=s.fileno())
+        signal_socket.detach()
+
+
+@pytest.mark.parametrize("runner", ["asyncio", "trio"])
+@pytest.mark.parametrize("get_handle", [get_fd, socket_fromfd, socket_fileno])
 def test_async_wait(runner, get_handle):
     if runner == "asyncio":
         run = asyncio.run
@@ -87,16 +102,5 @@ def test_async_wait(runner, get_handle):
         wait_time = run(f)
     finally:
         sender_thread.join()
+    # make sure it waited an appropriate amount of time
     assert 1 < wait_time < 3
-
-
-def test_socket_fromfd():
-    with zmq.Context() as ctx, ctx.socket(zmq.PULL) as s:
-        signal_socket = socket.fromfd(s.fileno(), socket.AF_INET, socket.SOCK_STREAM)
-        signal_socket.close()
-
-
-def test_socket_fileno():
-    with zmq.Context() as ctx, ctx.socket(zmq.PULL) as s:
-        signal_socket = socket.socket(fileno=s.fileno())
-        signal_socket.detach()
